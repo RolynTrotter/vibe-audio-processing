@@ -1,0 +1,12 @@
+{
+  "name": "vibe-audio-processing",
+  "version": "1.0.0",
+  "description": "Convolve two audio files into one, in the browser. Spectral cross-synthesis or true FFT convolution. Installable PWA, runs on Android.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "icons": "node scripts/generate-icons.mjs"
+  },
+  "license": "MIT",
+  "private": true
+}
