@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1020" />
+  <meta name="description" content="Convolve two audio files into one — spectral cross-synthesis or true convolution, right in your browser." />
+  <title>Vibe Convolver</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./src/styles.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Vibe Convolver</h1>
+      <p class="tag">Mix two sounds into one. Everything runs on your device — nothing is uploaded.</p>
+    </header>
+
+    <section class="files">
+      <label class="drop" id="dropA">
+        <input type="file" id="fileA" accept="audio/*,.wav" hidden />
+        <span class="slot">A</span>
+        <span class="hint" id="nameA">Tap to choose audio A</span>
+      </label>
+      <div class="op">✻</div>
+      <label class="drop" id="dropB">
+        <input type="file" id="fileB" accept="audio/*,.wav" hidden />
+        <span class="slot">B</span>
+        <span class="hint" id="nameB">Tap to choose audio B</span>
+      </label>
+    </section>
+
+    <section class="options">
+      <div class="row">
+        <label for="mode">Effect</label>
+        <select id="mode">
+          <option value="cross">Spectral cross-synthesis (A takes on B's timbre)</option>
+          <option value="convolution">True convolution (reverb / "A in B's space")</option>
+        </select>
+      </div>
+      <div class="row" id="frameRow">
+        <label for="frameSize">FFT window</label>
+        <select id="frameSize">
+          <option value="1024">1024</option>
+          <option value="2048" selected>2048</option>
+          <option value="4096">4096</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="normalize">Output ceiling</label>
+        <select id="normalize">
+          <option value="-1" selected>-1 dBFS (recommended)</option>
+          <option value="-3">-3 dBFS (quieter)</option>
+          <option value="-0.1">-0.1 dBFS (hot)</option>
+        </select>
+      </div>
+    </section>
+
+    <button id="go">Convolve</button>
+    <div id="progress" class="progress" style="display:none"><div class="bar"></div></div>
+    <p id="status" class="status"></p>
+
+    <section id="result" class="result" style="display:none">
+      <audio id="player" controls></audio>
+      <a id="download" class="download" download>⬇ Download WAV</a>
+    </section>
+
+    <details class="about">
+      <summary>How it works</summary>
+      <p><strong>Spectral cross-synthesis</strong> chops both files into overlapping
+      Hann-windowed chunks, FFTs each chunk, multiplies the two spectra, and
+      overlap-adds them back. The result tracks B's evolving tone — the classic
+      Max&nbsp;MSP <code>pfft~</code> sound. The shorter file is looped to cover the
+      longer one.</p>
+      <p><strong>True convolution</strong> convolves the whole signals via one big
+      FFT. If B is a short impulse (a room, a clap), A sounds like it was played in
+      that space.</p>
+      <p>Either way the whole file is scanned for its peak and turned down so it
+      can never clip. Mono out; mismatched sample rates are matched automatically.</p>
+    </details>
+  </main>
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
