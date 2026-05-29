@@ -11,15 +11,27 @@ Two flavours, switchable in the UI:
 
 - **Spectral cross-synthesis** *(default — the Max MSP `pfft~` approach)*
   Both files are chopped into overlapping **Hann-windowed** chunks, each chunk
-  is run through an **FFT**, the two spectra are **multiplied**, and the chunks
-  are **overlap-added** back together. The result is time-varying: file A takes
-  on the evolving timbre of file B. The shorter file is looped so it covers the
-  full length of the longer one. FFT window is selectable (1024 / 2048 / 4096).
+  is run through an **FFT**, the two spectra are **multiplied**, the result is
+  inverse-FFT'd, and the chunks are **overlap-added** back together. The result
+  is time-varying: file A takes on the evolving timbre of file B. The shorter
+  file is looped so it covers the longer one. FFT window (1024 / 2048 / 4096)
+  and window overlap (2× / 4× / 8×) are selectable.
+
+  Each chunk is **zero-padded before the FFT** so the spectral multiply is a
+  *linear* convolution per block, not a circular one. This matters: a circular
+  multiply wraps each block's tail back onto its start, and that discontinuity
+  is the broadband "scratch" you'd otherwise hear (and the lone spikes that make
+  normalization crush the rest of a file to silence). The Hann windowing
+  amplitude is divided back out exactly via the overlap-added window
+  autocorrelation, so windows add no warble — only the intended,
+  signal-dependent level variation remains.
 
 - **True convolution** *(convolution reverb)*
   A full linear convolution of the whole signals via a single zero-padded FFT.
-  If B is a short impulse (a room, a clap, a snare), A sounds like it was played
-  in that space.
+  This treats **B as one fixed impulse response**, so it only sounds like
+  "reverb" when B *is* an impulse response — a short room recording, a clap, a
+  snare. With a long, evolving B it smears rather than tracks; for that, use
+  cross-synthesis instead.
 
 Either way, the **entire output is scanned for its peak and turned down** so it
 can never clip — your PM's "no peeking" requirement. Output is mono WAV;

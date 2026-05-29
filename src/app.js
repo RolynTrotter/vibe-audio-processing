@@ -12,6 +12,8 @@ const nameB = $('nameB');
 const modeSel = $('mode');
 const frameSel = $('frameSize');
 const frameRow = $('frameRow');
+const overlapSel = $('overlap');
+const overlapRow = $('overlapRow');
 const normSel = $('normalize');
 const goBtn = $('go');
 const status = $('status');
@@ -54,9 +56,11 @@ function bindPicker(input, drop, label, set) {
 bindPicker(fileA, dropA, nameA, (f) => (pickedA = f));
 bindPicker(fileB, dropB, nameB, (f) => (pickedB = f));
 
-// Frame size only matters for cross-synthesis.
+// Frame size and overlap only matter for cross-synthesis.
 modeSel.addEventListener('change', () => {
-  frameRow.style.display = modeSel.value === 'cross' ? '' : 'none';
+  const show = modeSel.value === 'cross' ? '' : 'none';
+  frameRow.style.display = show;
+  overlapRow.style.display = show;
 });
 
 // --- decoding helpers ----------------------------------------------------
@@ -141,6 +145,7 @@ goBtn.addEventListener('click', async () => {
     const opts = {
       mode: modeSel.value,
       frameSize: parseInt(frameSel.value, 10),
+      overlap: parseInt(overlapSel.value, 10),
       normalizeDb: parseFloat(normSel.value),
     };
     const res = await runWorker(a, b, opts);
