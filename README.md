@@ -94,6 +94,15 @@ manifest.webmanifest     # PWA manifest
 The exact DSP code that runs in the browser is what the tests exercise in Node —
 there's no separate implementation to drift out of sync.
 
+## Versioning
+
+A small footer at the bottom of the app shows `version · git-sha · date`. The
+semantic version lives in [`version.json`](version.json) (bump it when you cut a
+release); the git short-SHA and date are stamped automatically at deploy time.
+Because the service worker uses stale-while-revalidate, reloading after a deploy
+flips the footer to the new SHA once the fresh copy lands — an at-a-glance check
+that your change actually propagated past the PWA cache.
+
 ## Deploy
 
 Merging to `main` triggers `.github/workflows/deploy.yml`, which publishes the
