@@ -9,7 +9,7 @@
 // Everything finishes with peak normalization so the output can never clip
 // ("no peeking"). Pure JS, shared by the browser app and the Node tests.
 
-import { fft, ifft, nextPow2 } from './fft.js';
+import { fft, ifft, nextPow2, isPow2 } from './fft.js';
 
 /** Downmix planar channels to a single mono Float32Array. */
 export function toMono(channels) {
@@ -76,22 +76,50 @@ function tileTo(data, len) {
 }
 
 /**
- * Spectral cross-synthesis (PM spec): STFT both signals with a Hann window
- * and 50% overlap, complex-multiply matching frames, then overlap-add.
+ * Linear convolution of the analysis window with itself (w ⊛ w), computed via
+ * the same zero-padded FFT path the signal uses, so it exactly matches the
+ * window contribution of each block. Used to divide the windowing back out.
+ */
+function windowAutoConv(win, fftSize) {
+  const wr = new Float64Array(fftSize);
+  const wi = new Float64Array(fftSize);
+  for (let i = 0; i < win.length; i++) wr[i] = win[i];
+  fft(wr, wi);
+  for (let i = 0; i < fftSize; i++) {
+    const re = wr[i] * wr[i] - wi[i] * wi[i];
+    const im = 2 * wr[i] * wi[i];
+    wr[i] = re; wi[i] = im;
+  }
+  ifft(wr, wi);
+  return wr; // length fftSize; the real part is (w ⊛ w), zero-padded
+}
+
+/**
+ * Windowed spectral-multiply convolution (the PM's spec, done right).
  *
- * The shorter signal is looped so the full duration of the longer one is
- * processed. Output is peak-normalized.
+ * For each overlapping frame: Hann-window a block of A and a block of B, FFT
+ * both, multiply the spectra, inverse-FFT, and overlap-add the result. Crucial
+ * detail: each frame is zero-padded to twice its length before the FFT, so the
+ * spectral multiply is a *linear* convolution per block rather than a circular
+ * one. Circular convolution wraps its tail back onto the block start, and that
+ * wrap-around discontinuity is the broadband "scratch" (and the lone spikes
+ * that normalize the rest of the file down to silence). Zero-padding removes it.
+ *
+ * The windowing amplitude envelope is divided back out exactly via the
+ * overlap-added window autocorrelation (w ⊛ w), so windows add no warble while
+ * the signal-dependent level variation — the actual effect — is preserved.
+ *
+ * The shorter signal is looped to cover the longer one. Output is peak-limited.
  *
  * @param {Float32Array} a
  * @param {Float32Array} b
- * @param {{frameSize?:number, normalizeDb?:number}} [opts]
+ * @param {{frameSize?:number, overlap?:number, normalizeDb?:number}} [opts]
  */
 export function crossSynthesis(a, b, opts = {}) {
   const frameSize = opts.frameSize || 2048;
-  if ((frameSize & (frameSize - 1)) !== 0) {
-    throw new Error('frameSize must be a power of two');
-  }
-  const hop = frameSize >> 1; // 50% overlap == "2 window overlap"
+  if (!isPow2(frameSize)) throw new Error('frameSize must be a power of two');
+  const overlap = opts.overlap || 4; // 4 == 75% overlapping windows
+  const hop = Math.max(1, Math.floor(frameSize / overlap));
   const win = hann(frameSize);
 
   const len = Math.max(a.length, b.length);
@@ -99,54 +127,56 @@ export function crossSynthesis(a, b, opts = {}) {
   const sa = tileTo(a, len);
   const sb = tileTo(b, len);
 
-  // Pad so the final frame is whole, plus a frame of head/tail room.
-  const padded = len + frameSize;
-  const out = new Float32Array(padded);
-  const norm = new Float32Array(padded); // running sum of squared windows (COLA)
+  const fftSize = frameSize * 2; // zero-pad: makes the multiply a linear conv
+  const outLen = len + fftSize;  // room for the convolution tail
+  const out = new Float32Array(outLen);
+  const env = new Float32Array(outLen); // overlap-added window envelope
 
-  const ar = new Float64Array(frameSize), ai = new Float64Array(frameSize);
-  const br = new Float64Array(frameSize), bi = new Float64Array(frameSize);
+  const wconv = windowAutoConv(win, fftSize);
 
-  // Scale keeps the complex multiply from exploding before normalization;
-  // the final peak-normalize removes any residual level dependence.
-  const scale = 1 / frameSize;
+  const ar = new Float64Array(fftSize), ai = new Float64Array(fftSize);
+  const br = new Float64Array(fftSize), bi = new Float64Array(fftSize);
 
-  for (let start = 0; start + frameSize <= padded; start += hop) {
-    for (let i = 0; i < frameSize; i++) {
-      const idx = start + i;
-      const sav = idx < len ? sa[idx] : 0;
-      const sbv = idx < len ? sb[idx] : 0;
-      const wv = win[i];
-      ar[i] = sav * wv; ai[i] = 0;
-      br[i] = sbv * wv; bi[i] = 0;
+  for (let start = 0; start < len; start += hop) {
+    for (let i = 0; i < fftSize; i++) {
+      if (i < frameSize) {
+        const idx = start + i;
+        const wv = win[i];
+        ar[i] = (idx < len ? sa[idx] : 0) * wv; ai[i] = 0;
+        br[i] = (idx < len ? sb[idx] : 0) * wv; bi[i] = 0;
+      } else {
+        ar[i] = 0; ai[i] = 0; br[i] = 0; bi[i] = 0;
+      }
     }
 
     fft(ar, ai);
     fft(br, bi);
 
-    // Complex multiply A*B per bin (== circular convolution within the block).
-    for (let i = 0; i < frameSize; i++) {
+    // Complex multiply A*B per bin. Zero-padding above makes this a linear
+    // (non-wrapping) convolution of the two windowed blocks.
+    for (let i = 0; i < fftSize; i++) {
       const xr = ar[i] * br[i] - ai[i] * bi[i];
       const xi = ar[i] * bi[i] + ai[i] * br[i];
-      ar[i] = xr * scale;
-      ai[i] = xi * scale;
+      ar[i] = xr; ai[i] = xi;
     }
 
     ifft(ar, ai);
 
-    // Overlap-add with a synthesis Hann window (COLA-correct reconstruction).
-    for (let i = 0; i < frameSize; i++) {
-      const idx = start + i;
-      const wv = win[i];
-      out[idx] += ar[i] * wv;
-      norm[idx] += wv * wv;
+    for (let i = 0; i < fftSize; i++) {
+      out[start + i] += ar[i];
+      env[start + i] += wconv[i];
     }
   }
 
-  // Divide out the overlapped window energy where it's meaningful.
+  // Divide the windowing back out. For constant inputs this reconstructs a
+  // constant exactly; for real signals only the windowing modulation is
+  // removed. Trim the convolution group delay (~half a window) to stay aligned.
+  const delay = frameSize >> 1;
   const result = new Float32Array(len);
   for (let i = 0; i < len; i++) {
-    result[i] = norm[i] > 1e-8 ? out[i] / norm[i] : out[i];
+    const j = i + delay;
+    const e = env[j];
+    result[i] = e > 1e-6 ? out[j] / e : 0;
   }
 
   return normalizePeak(result, opts.normalizeDb ?? -1);

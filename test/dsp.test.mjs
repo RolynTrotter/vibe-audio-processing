@@ -158,6 +158,51 @@ test('crossSynthesis: correct length, finite, no clipping', () => {
   assert.ok(maxAbs(out) <= Math.pow(10, -1 / 20) + 1e-6);
 });
 
+test('crossSynthesis: windowing is flat for constant inputs (no warble/scratch)', () => {
+  // If A and B are constant, the windowed spectral multiply must reconstruct a
+  // constant. Any periodic ripple here would be the windowing artifact the PM
+  // heard as "scratch". Check the steady-state interior is essentially flat.
+  const N = 8192;
+  const a = new Float32Array(N).fill(0.5);
+  const b = new Float32Array(N).fill(0.8);
+  const out = crossSynthesis(a, b, { frameSize: 1024, overlap: 4 });
+  const interior = out.subarray(2048, N - 2048);
+  let min = Infinity, max = -Infinity;
+  for (const x of interior) { if (x < min) min = x; if (x > max) max = x; }
+  const ripple = (max - min) / Math.max(1e-9, Math.abs(max));
+  assert.ok(ripple < 1e-3, `interior should be flat, got ripple ${ripple}`);
+});
+
+test('crossSynthesis: real signals produce audible (non-silent) output', () => {
+  // Regression for the "sometimes a silent file" report: the old circular-
+  // convolution wrap spike made normalization crush everything else to zero.
+  const N = 16384;
+  const a = new Float32Array(N);
+  const b = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    a[i] = Math.sin(2 * Math.PI * 220 * i / 44100);
+    b[i] = (Math.random() * 2 - 1) * (0.5 + 0.5 * Math.sin(2 * Math.PI * 3 * i / 44100));
+  }
+  const out = crossSynthesis(a, b, { frameSize: 2048, overlap: 4 });
+  let rms = 0;
+  for (const x of out) rms += x * x;
+  rms = Math.sqrt(rms / out.length);
+  assert.ok(rms > 0.01, `output should be audible, got rms ${rms}`);
+  assert.ok(out.every(Number.isFinite));
+});
+
+test('crossSynthesis: more overlap still reconstructs a constant', () => {
+  const a = new Float32Array(8192).fill(0.3);
+  const b = new Float32Array(8192).fill(0.3);
+  for (const ov of [2, 4, 8]) {
+    const out = crossSynthesis(a, b, { frameSize: 1024, overlap: ov });
+    const interior = out.subarray(2048, 6144);
+    let min = Infinity, max = -Infinity;
+    for (const x of interior) { if (x < min) min = x; if (x > max) max = x; }
+    assert.ok((max - min) / Math.abs(max) < 5e-3, `overlap ${ov} not flat`);
+  }
+});
+
 test('crossSynthesis rejects non-power-of-two frame size', () => {
   assert.throws(() => crossSynthesis(new Float32Array(10), new Float32Array(10), { frameSize: 1000 }));
 });
