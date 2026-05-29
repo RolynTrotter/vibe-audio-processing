@@ -176,6 +176,25 @@ function stripExt(name) {
   return name.replace(/\.[^.]+$/, '');
 }
 
+// --- version footer ------------------------------------------------------
+// Shows the deployed version + git short-SHA + date so it's obvious when a
+// change has actually propagated past the PWA cache. version.json is stamped
+// at deploy time; falls back gracefully when running locally.
+(async function showVersion() {
+  const el = $('version');
+  if (!el) return;
+  try {
+    const res = await fetch('./version.json', { cache: 'no-cache' });
+    const v = await res.json();
+    const parts = [`v${v.version}`];
+    if (v.build && v.build !== 'dev') parts.push(v.build);
+    if (v.date) parts.push(v.date);
+    el.textContent = parts.join(' · ');
+  } catch {
+    el.textContent = 'v? · local';
+  }
+})();
+
 // --- PWA service worker --------------------------------------------------
 
 if ('serviceWorker' in navigator) {

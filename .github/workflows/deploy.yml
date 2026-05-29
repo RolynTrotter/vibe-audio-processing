@@ -29,7 +29,14 @@ jobs:
       - name: Stage site files
         run: |
           mkdir -p _site
-          cp -r index.html manifest.webmanifest sw.js src icons _site/
+          cp -r index.html manifest.webmanifest sw.js src icons version.json _site/
+      - name: Stamp build version
+        run: |
+          VER=$(node -p "require('./version.json').version")
+          SHA=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%d)
+          printf '{ "version": "%s", "build": "%s", "date": "%s" }\n' "$VER" "$SHA" "$DATE" > _site/version.json
+          echo "Stamped version.json: v$VER · $SHA · $DATE"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
