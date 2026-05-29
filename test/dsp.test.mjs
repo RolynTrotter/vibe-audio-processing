@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { fft, ifft, nextPow2, isPow2 } from '../src/dsp/fft.js';
 import { encodeWav, decodeWav } from '../src/dsp/wav.js';
 import {
-  toMono, resampleLinear, hann, normalizePeak,
+  toMono, resampleLinear, hann, normalizePeak, applyFade,
   crossSynthesis, trueConvolution, process,
 } from '../src/dsp/convolve.js';
 
@@ -126,6 +126,34 @@ test('normalizePeak leaves silence untouched', () => {
   const x = new Float32Array([0, 0, 0]);
   normalizePeak(x, -1);
   assert.equal(maxAbs(x), 0);
+});
+
+test('applyFade ramps both ends to zero over ~fadeSec', () => {
+  const sr = 44100;
+  const x = new Float32Array(sr).fill(1); // 1 second of DC
+  applyFade(x, sr, 0.01); // 10 ms => 441 samples each end
+  assert.equal(x[0], 0);
+  assert.equal(x[x.length - 1], 0);
+  assert.ok(x[220] > 0 && x[220] < 1, 'mid-fade should be partial');
+  assert.equal(x[441], 1, 'sample just past the fade should be untouched');
+  assert.equal(x[x.length - 1 - 441], 1, 'tail just inside should be untouched');
+});
+
+test('applyFade clamps to half-length for very short signals', () => {
+  const x = new Float32Array(6).fill(1);
+  applyFade(x, 44100, 1.0); // would be huge; clamps to 3 each side
+  assert.equal(x[0], 0);
+  assert.equal(x[5], 0);
+  assert.ok(x.every(Number.isFinite));
+});
+
+test('process applies the fade so output starts and ends at zero', () => {
+  const sr = 44100;
+  const srcA = { sampleRate: sr, channels: [new Float32Array(8192).map((_, i) => Math.sin(i * 0.2) + 0.5)] };
+  const srcB = { sampleRate: sr, channels: [new Float32Array(8192).map((_, i) => Math.cos(i * 0.05) + 0.5)] };
+  const { data } = process(srcA, srcB, { mode: 'cross', frameSize: 1024 });
+  assert.equal(data[0], 0);
+  assert.equal(data[data.length - 1], 0);
 });
 
 test('trueConvolution matches naive convolution (shape, up to scale)', () => {

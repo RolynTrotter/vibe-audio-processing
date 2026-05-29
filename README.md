@@ -34,7 +34,8 @@ Two flavours, switchable in the UI:
   cross-synthesis instead.
 
 Either way, the **entire output is scanned for its peak and turned down** so it
-can never clip — your PM's "no peeking" requirement. Output is mono WAV;
+can never clip — your PM's "no peeking" requirement — and a short 10 ms cosine
+**fade in/out** is applied to remove the start/end pop. Output is mono WAV;
 mismatched sample rates are matched automatically (resampled to the higher of
 the two).
 

@@ -41,6 +41,28 @@ export function resampleLinear(data, fromRate, toRate) {
   return out;
 }
 
+/**
+ * Apply a short cosine (equal-curve) fade in and out, in place. Kills the
+ * start/end "pop" that comes from the waveform beginning at a non-zero sample.
+ * Fade length is clamped to half the signal so very short files still fade.
+ *
+ * @param {Float32Array} data
+ * @param {number} sampleRate
+ * @param {number} [fadeSec=0.01]
+ */
+export function applyFade(data, sampleRate, fadeSec = 0.01) {
+  const n = data.length;
+  if (n === 0) return data;
+  const f = Math.min(Math.floor(fadeSec * sampleRate), n >> 1);
+  for (let i = 0; i < f; i++) {
+    // Half-cosine ramp: 0 -> 1 over the fade.
+    const g = 0.5 * (1 - Math.cos((Math.PI * i) / f));
+    data[i] *= g;
+    data[n - 1 - i] *= g;
+  }
+  return data;
+}
+
 /** Periodic Hann window of length n (matches numpy/scipy STFT convention). */
 export function hann(n) {
   const w = new Float32Array(n);
@@ -242,5 +264,8 @@ export function process(srcA, srcB, opts = {}) {
   } else {
     data = crossSynthesis(a, b, opts);
   }
+  // Short fade in/out to remove the start/end pop. Applied after the engine's
+  // peak-normalization, so it only ever lowers edge samples — never clips.
+  applyFade(data, sampleRate, opts.fadeSec ?? 0.01);
   return { data, sampleRate };
 }
